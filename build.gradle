@@ -156,10 +156,7 @@ dependencies {
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
 
     //implementation fg.deobf("maven.modrinth:spark:1.10.53-forge")
-    dependencies {
-        compileOnly("me.lucko:spark-api:0.1-SNAPSHOT")
-    }
-
+    compileOnly("me.lucko:spark-api:0.1-SNAPSHOT")
 
 }
 
