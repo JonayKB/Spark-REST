@@ -28,7 +28,7 @@ import com.google.gson.JsonObject;
 @Mod("spark_rest")
 public class SparkRest {
 
-    private static Spark spark;
+    private Spark spark;
     private static final Logger LOGGER = LogUtils.getLogger();
 
     public SparkRest() {
