@@ -69,6 +69,14 @@ public class SparkRest {
         @Override
         public void handle(HttpExchange exchange) {
             try {
+                if(spark == null) {
+                    String response = "Spark not found or not loaded. Wait until the server is fully started.";
+                    exchange.sendResponseHeaders(500, response.length());
+                    OutputStream os = exchange.getResponseBody();
+                    os.write(response.getBytes(StandardCharsets.UTF_8));
+                    os.close();
+                    return;
+                }
                 // Get the TPS statistic (will be null on platforms that don't have ticks!)
                 DoubleStatistic<StatisticWindow.TicksPerSecond> tps = spark.tps();
                 GenericStatistic<DoubleAverageInfo, StatisticWindow.MillisPerTick> mspt = spark.mspt();
@@ -77,7 +85,6 @@ public class SparkRest {
                 // Retrieve the average TPS in the last 10 seconds / 5 minutes
                 double tpsLast10Secs = tps.poll(StatisticWindow.TicksPerSecond.SECONDS_10);
                 double tpsLast1Mins = tps.poll(StatisticWindow.TicksPerSecond.MINUTES_1);
-
                 double tpsLast5Mins = tps.poll(StatisticWindow.TicksPerSecond.MINUTES_5);
                 double tpsLast15Mins = tps.poll(StatisticWindow.TicksPerSecond.MINUTES_15);
 
@@ -90,7 +97,7 @@ public class SparkRest {
                 json.addProperty("tps_1m", tpsLast1Mins);
                 json.addProperty("tps_5m", tpsLast5Mins);
                 json.addProperty("tps_15m", tpsLast15Mins);
-                json.addProperty("mspt_1m", msptLastMin.percentile95th());
+                json.addProperty("mspt_1m", msptLastMin.mean());
                 json.addProperty("cpu", usageLastMin);
 
                 byte[] response = json.toString().getBytes(StandardCharsets.UTF_8);
