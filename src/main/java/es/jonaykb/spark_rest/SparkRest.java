@@ -45,6 +45,24 @@ public class SparkRest {
 
         spark = SparkCompat.tryLoad();
 
+        LOGGER.info("Spark implementation = {}", spark.getClass().getName());
+        try {
+            LOGGER.info(
+                    "TPS test = {}",
+                    spark.tps().poll(StatisticWindow.TicksPerSecond.SECONDS_10));
+        } catch (Throwable t) {
+            LOGGER.error("TPS test failed", t);
+        }
+
+        try {
+            LOGGER.info(
+                    "CPU test = {}",
+                    spark.cpuSystem().poll(
+                            StatisticWindow.CpuUsage.MINUTES_1));
+        } catch (Throwable t) {
+            LOGGER.error("CPU test failed", t);
+        }
+
         if (spark == null) {
             LOGGER.error("Spark not found! spark_rest will run in DISABLED mode.");
             return;
