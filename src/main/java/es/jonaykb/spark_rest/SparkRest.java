@@ -71,16 +71,19 @@ public class SparkRest {
     }
 
     private void startHttpServer() {
-        try {
-            HttpServer server = HttpServer.create(new InetSocketAddress(getPort()), 0);
-            server.createContext("/" + getEndpoint(), new MetricsHandler());
-            server.setExecutor(null);
-            server.start();
-            LOGGER.info("Spark REST API started on port {}, using endpoint {}", getPort(), getEndpoint());
-
-        } catch (Exception e) {
-            LOGGER.error("Failed to start Spark REST API", e);
-        }
+        Thread thread = new Thread(() -> {
+            try {
+                HttpServer server = HttpServer.create(new InetSocketAddress(getPort()), 0);
+                server.createContext("/" + getEndpoint(), new MetricsHandler());
+                server.setExecutor(null);
+                server.start();
+                LOGGER.info("Spark REST API started on port {}, endpoint /{}", getPort(), getEndpoint());
+            } catch (Exception e) {
+                LOGGER.error("Failed to start Spark REST API", e);
+            }
+        }, "SparkRest-HTTP");
+        thread.setDaemon(true); 
+        thread.start();
     }
 
     class MetricsHandler implements HttpHandler {
