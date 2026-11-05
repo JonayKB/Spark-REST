@@ -20,6 +20,9 @@ import com.sun.net.httpserver.HttpExchange;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 
@@ -45,44 +48,42 @@ public class SparkRest {
 
         spark = SparkCompat.tryLoad();
 
-        LOGGER.info("Spark implementation = {}", spark.getClass().getName());
-        try {
-            LOGGER.info(
-                    "TPS test = {}",
-                    spark.tps().poll(StatisticWindow.TicksPerSecond.SECONDS_10));
-        } catch (Throwable t) {
-            LOGGER.error("TPS test failed", t);
-        }
-
-        try {
-            LOGGER.info(
-                    "CPU test = {}",
-                    spark.cpuSystem().poll(
-                            StatisticWindow.CpuUsage.MINUTES_1));
-        } catch (Throwable t) {
-            LOGGER.error("CPU test failed", t);
-        }
-
         if (spark == null) {
             LOGGER.error("Spark not found! spark_rest will run in DISABLED mode.");
             return;
         }
+
+        LOGGER.info("Spark implementation = {}", spark.getClass().getName());
         startHttpServer();
     }
 
     private void startHttpServer() {
+        // The JDK HTTP server threads use the AppClassLoader as context classloader,
+        // which can't see mod classes. Forge's EventBus transformer relies on the
+        // context classloader when spark lazily loads classes (e.g. on mspt()), so
+        // run the handlers on threads whose context classloader is the mod's one.
+        ClassLoader modClassLoader = SparkRest.class.getClassLoader();
+        AtomicInteger threadCount = new AtomicInteger();
+        ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
+            Thread t = new Thread(runnable, "SparkRest-Worker-" + threadCount.incrementAndGet());
+            t.setContextClassLoader(modClassLoader);
+            t.setDaemon(true);
+            return t;
+        });
+
         Thread thread = new Thread(() -> {
             try {
                 HttpServer server = HttpServer.create(new InetSocketAddress(getPort()), 0);
                 server.createContext("/" + getEndpoint(), new MetricsHandler());
-                server.setExecutor(null);
+                server.setExecutor(executor);
                 server.start();
                 LOGGER.info("Spark REST API started on port {}, endpoint /{}", getPort(), getEndpoint());
             } catch (Exception e) {
                 LOGGER.error("Failed to start Spark REST API", e);
             }
         }, "SparkRest-HTTP");
-        thread.setDaemon(true); 
+        thread.setContextClassLoader(modClassLoader);
+        thread.setDaemon(true);
         thread.start();
     }
 
@@ -91,11 +92,7 @@ public class SparkRest {
         public void handle(HttpExchange exchange) {
             try {
                 if (spark == null) {
-                    String response = "Spark not found or not loaded. Wait until the server is fully started.";
-                    exchange.sendResponseHeaders(500, response.length());
-                    OutputStream os = exchange.getResponseBody();
-                    os.write(response.getBytes(StandardCharsets.UTF_8));
-                    os.close();
+                    sendText(exchange, 500, "Spark not found or not loaded. Wait until the server is fully started.");
                     return;
                 }
 
@@ -132,8 +129,22 @@ public class SparkRest {
                 os.write(response);
                 os.close();
 
-            } catch (Exception e) {
-                LOGGER.error("Error handling /{} request", getEndpoint(), e);
+            } catch (Throwable t) {
+                LOGGER.error("Error handling /{} request", getEndpoint(), t);
+                try {
+                    sendText(exchange, 500, "Internal error: " + t);
+                } catch (Throwable ignored) {
+                    exchange.close();
+                }
+            }
+        }
+
+        private void sendText(HttpExchange exchange, int status, String text) throws java.io.IOException {
+            byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/plain; charset=utf-8");
+            exchange.sendResponseHeaders(status, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
             }
         }
     }
