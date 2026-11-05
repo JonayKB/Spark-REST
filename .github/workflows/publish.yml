@@ -1,0 +1,53 @@
+name: Publish to CurseForge
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew build
+
+      - name: Read mod version
+        id: version
+        run: echo "mod_version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to CurseForge
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          curseforge-id: ${{ secrets.CURSEFORGE_PROJECT_ID }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+
+          files: build/libs/spark_rest-${{ steps.version.outputs.mod_version }}.jar
+          name: Spark REST ${{ steps.version.outputs.mod_version }}
+          version: ${{ steps.version.outputs.mod_version }}
+          version-type: release
+          changelog: ${{ github.event.release.body }}
+
+          loaders: forge
+          game-versions: 1.20.1
+          java: 17
+
+          dependencies: |
+            spark(required){curseforge:spark}
